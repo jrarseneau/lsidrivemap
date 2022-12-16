@@ -70,8 +70,8 @@ Example output:
 Customization
 -------------
 
-The output is based on my 24 bay drive chassis that has
-six rows of four drives. You may need to customise the
+The output is based on my 36 bay drive chassis that has
+six rows of four drives in the front, and three rows of four drives in the rear. You **will** need to customise the
 'print_controller' function to suit your own needs. 
 
 Known Issues
