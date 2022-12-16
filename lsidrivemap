@@ -1,142 +1,232 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import sys
 import subprocess
 import re
 
-portspercontroller = 8
-
+portspercontroller = 24
+storcli = "/usr/local/bin/storcli64"
 datatype = sys.argv[1]
 
 
 def number_of_controllers():
-    rawdata = subprocess.Popen(['/opt/MegaRAID/MegaCli/megacli', '-cfgdsply',
-                               '-aALL'], stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE).communicate()[0]
-    regex = re.compile('Adapter:.*')
-    match = regex.findall(rawdata)
-    return len(match)
+  rawdata = subprocess.Popen([storcli, 'show'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0]
+  regex = re.search('Number of Controllers = ([0-9])', str(rawdata))
+  #print('There are ' + regex.group(1) + ' controllers found')
+  return int(regex.group(1))
 
+def number_of_enclosures():
+  encs = {}
+  for controller in range(0, controllercount):
+    encs[controller] = []
+    rawdata = subprocess.Popen([storcli, '/c' + str(controller), 'show'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0]
+    listdata = rawdata.decode().split("\n")
+    for line in listdata:
+      regex = re.search('^([0-9]+):[0-9]+', line)
+      if regex:
+        if regex.group(1) not in encs[controller]:
+          encs[controller].append(regex.group(1))
+  
+  return(encs)
+  
+def get_drive_wwn(controller, enclosure, slot):
+  cmd = "{} /c{}/e{}/s{} show all | grep 'WWN ='".format(storcli, controller, enclosure, slot)
+  rawdata = subprocess.Popen([storcli,
+                              '/c%s' % controller,
+                              '/e%s' % enclosure,
+                              '/s%s' % slot,
+                              'show',
+                              'all',
+                              ], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0]
+  cleandata = rawdata.decode('utf8').strip()
+  regex = re.search('WWN = (.*)', cleandata)  
+  try:
+    return regex.group(1)
+  except(AttributeError):
+    return ""
+  
+def get_drive_model(controller, enclosure, slot):
+  rawdata = subprocess.Popen([storcli,
+                              '/c%s' % controller,
+                              '/e%s' % enclosure,
+                              '/s%s' % slot,
+                              'show',
+                              'all',
+                              ], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0]
+  cleandata = rawdata.decode('utf8').strip()
+  regex = re.search('Model Number = (.*)', cleandata)  
+  try:
+    return regex.group(1)
+  except(AttributeError):
+    return ""
 
-def get_drive_wwn(controller, port):
-    rawdata = subprocess.Popen(['/opt/MegaRAID/MegaCli/megacli', '-pdinfo',
-                               '-physdrv', '[64:' + str(port) + ']',
-                               '-a' + str(controller)], stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE).communicate()
-    regex = re.compile('WWN: (.*)')
-    match = regex.search(rawdata[0])
-    try:
-        return match.group(1)
-    except(AttributeError):
-        return ""
+def get_drive_serial(controller, enclosure, slot):
+  rawdata = subprocess.Popen([storcli,
+                              '/c%s' % controller,
+                              '/e%s' % enclosure,
+                              '/s%s' % slot,
+                              'show',
+                              'all',
+                              ], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0]
+  cleandata = rawdata.decode('utf8').strip()
+  regex = re.search('SN = (.*)', cleandata)  
+  try:
+    return regex.group(1).strip()
+  except(AttributeError):
+    return ""
 
+def get_drive_size(controller, enclosure, slot):
+  rawdata = subprocess.Popen([storcli,
+                              '/c%s' % controller,
+                              '/e%s' % enclosure,
+                              '/s%s' % slot,
+                              'show',
+                              'all',
+                              ], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0]
+  cleandata = rawdata.decode('utf8').strip()
+  regex = re.search('Raw size = ([0-9]+\.[0-9]+)( [A-Za-z]+) \[', cleandata)  
+  try:
+    size = round(float(regex.group(1)) * 1.0995)
+    return str(size)+regex.group(2)
+  except(AttributeError):
+    return ""
 
 def get_all_disk_by_id():
     disk_by_id_data = subprocess.Popen(['ls', '-alh', '/dev/disk/by-id'],
                                        stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE).communicate()[0]
-    return disk_by_id_data
+    return disk_by_id_data.decode('utf8').strip()
 
 
 def convert_wwn_to_drivename(wwn, diskbyid):
-    regex = re.compile(wwn + '(.*)')
-    match = regex.search(diskbyid)
-    try:
-        return match.group(1).split("/")[2]
-    except(AttributeError):
-        return ""
-    except(IndexError):
-        return ""
+  regex = re.search(wwn + '(.*)', diskbyid, re.IGNORECASE)
+  try:
+    return regex.group(1).split("/")[2]
+  except(AttributeError):
+    return ""
+  except(IndexError):
+    return ""
+
+def get_drive_temp(controller, enclosure, slot):
+  wwn = get_drive_wwn(controller, enclosure, slot)
+  diskbyid = get_all_disk_by_id()
+  drivename = convert_wwn_to_drivename(wwn, diskbyid)
+  rawdata = subprocess.Popen(['/usr/sbin/hddtemp', '/dev/'+drivename],
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE).communicate()[0]
+  
+  cleandata = rawdata.decode('utf8').strip()
+  regex = re.search('([0-9][0-9]°C)', cleandata)
+  try:
+    return regex.group(1)
+  except(AttributeError):
+    return ""
+  except(IndexError):
+    return ""
 
 
-def get_drive_temp(controller, port):
-
-    rawdata = subprocess.Popen(['/opt/MegaRAID/MegaCli/megacli', '-pdinfo',
-                               '-physdrv', '[64:' + str(port) + ']',
-                               '-a' + str(controller)], stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE).communicate()[0]
-
-    regex = re.compile('Drive Temperature :(.*)')
-    match = regex.search(rawdata)
-    try:
-        temp = match.group(1).split("C")[0]
-
-        #
-        # Ugly hack: issue with some old WD drives
-        # Controller reports 65C for them.
-        #
-        if int(temp) >= 60:
-            temp = "?"
-        return temp
-
-    except(AttributeError):
-        return ""
-    except(IndexError):
-        return ""
+def get_drive_name(controller, enclosure, slot):
+  wwn = get_drive_wwn(controller, enclosure, slot)
+  diskbyid = get_all_disk_by_id()
+  drivename = convert_wwn_to_drivename(wwn, diskbyid)
+  return drivename
 
 
-def get_drive_name(controller, port):
-    wwn = get_drive_wwn(controller, port)
-    diskbyid = get_all_disk_by_id()
-    drivename = convert_wwn_to_drivename(wwn, diskbyid)
-    return drivename
-
-
-def get_drive_info(controller, port, datatype):
+def get_drive_info(controller, enclosure, slot, datatype):
     if datatype == "disk":
-        return get_drive_name(controller, port)
+        return get_drive_name(controller, enclosure, slot)
     if datatype == "temp":
-        return get_drive_temp(controller, port)
+        return get_drive_temp(controller, enclosure, slot)
     if datatype == "wwn":
-        return get_drive_wwn(controller, port)
-
+        return get_drive_wwn(controller, enclosure, slot)
+    if datatype == "model":
+        return get_drive_model(controller, enclosure, slot)
+    if datatype == "serial":
+        return get_drive_serial(controller, enclosure, slot)
+    if datatype == "size":
+        return get_drive_size(controller, enclosure, slot)
+        
 
 def fetch_data(datatype):
-
-    drivearray =\
-        [[0 for x in xrange(portspercontroller)]
-            for x in xrange(controllercount)]
-
-    for x in xrange(controllercount):
-        for y in xrange(portspercontroller):
-            disk = get_drive_info(x, y, datatype)
-            if len(disk) == 0:
-                disk = ""
-            drivearray[x][y] = disk
-            #temp = get_drive_temp(x,y)
-            #print str(x) + " " + str(y) + "Temp: " + str(temp)
-
-    return drivearray
-
+  
+  drivearray = {
+    x: {
+      y: {
+        z: get_drive_info(x,y,z,datatype) for z in range(portspercontroller)
+        } 
+      for y in enclosurecount[x] 
+      } 
+    for x in range(controllercount)
+  }
+  
+  return drivearray
 
 def get_largest_width(array):
-    width = 0
-    for controller in array:
-        for port in controller:
-            size = len(port)
-            if size > width:
-                width = size
-    return width
+  width = 0
+  for port, data in array.items():
+    size = len(data)
+    if size > width:
+      width = size
+  
+  return width
 
 
 def print_controller(controller, array):
 
-    width = str(get_largest_width(array))
-    c = array[controller]
-    top = [c[3], c[2], c[1], c[0]]
-    bottom = [c[7], c[6], c[5], c[4]]
-    print "| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
-        *top, width=width)
-    print "| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
-        *bottom, width=width)
+  # This function is highly customized to my
+  # Supermicro CSE-847BE1C-R1K28LPB
+  # URL: https://www.supermicro.com/en/products/chassis/4U/847/SC847BE1C4-R1K23LPB
+  # Currently there is 1 controller (0) and 2 Enclosure IDs (13,17)
+  # As of December 2022
+
+  for e, p in array.items():
+    width = str(get_largest_width(p))
+    
+    # Here is the custom part, we force enclosure 13 and 17
+    if (e == '13'):
+      row1 = [p[5], p[11], p[17], p[23]]
+      row2 = [p[4], p[10], p[16], p[22]]
+      row3 = [p[3], p[9], p[15], p[21]]
+      row4 = [p[2], p[8], p[14], p[20]]
+      row5 = [p[1], p[7], p[13], p[19]]
+      row6 = [p[0], p[6], p[12], p[18]]
+      
+      print("Front:")
+      print("| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
+           *row1, width=width))
+      print("| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
+           *row2, width=width))
+      print("| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
+           *row3, width=width))
+      print("| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
+           *row4, width=width))
+      print("| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
+           *row5, width=width))
+      print("| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
+           *row6, width=width))
+    
+    elif (e == '17'):
+      row1 = [p[2], p[5], p[8], p[11]]
+      row2 = [p[1], p[4], p[7], p[10]]
+      row3 = [p[0], p[3], p[6], p[9]]
+      
+      print("\n")
+      print("Rear:")
+      print("| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
+           *row1, width=width))
+      print("| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
+           *row2, width=width))
+      print("| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
+           *row3, width=width))
 
 
 if __name__ == "__main__":
 
-    controllercount = number_of_controllers()
-    data = fetch_data(datatype)
+  controllercount = number_of_controllers()
+  enclosurecount = number_of_enclosures()
+  data = fetch_data(datatype)
 
-    print
-    for x in reversed(xrange(controllercount)):
-        print_controller(x, data)
-    print
+  print
+  for x in reversed(range(controllercount)):
+    print_controller(x, data[x])
+  print
