@@ -179,17 +179,18 @@ def print_controller(controller, array):
   # Currently there is 1 controller (0) and 2 Enclosure IDs (13,17)
   # As of December 2022
 
-  for e, p in array.items():
-    width = str(get_largest_width(p))
-    
-    # Here is the custom part, we force enclosure 13 and 17
-    if (e == '13'):
-      row1 = [p[5], p[11], p[17], p[23]]
-      row2 = [p[4], p[10], p[16], p[22]]
-      row3 = [p[3], p[9], p[15], p[21]]
-      row4 = [p[2], p[8], p[14], p[20]]
-      row5 = [p[1], p[7], p[13], p[19]]
-      row6 = [p[0], p[6], p[12], p[18]]
+  for idx, e in enumerate(array):
+    width = str(get_largest_width(array[e]))
+
+    # Here is the custom part, my enclosure at idx pos 0 is the first one
+    # and idx pos 1 is the second one.
+    if (idx == 0):
+      row1 = [array[e][5], array[e][11], array[e][17], array[e][23]]
+      row2 = [array[e][4], array[e][10], array[e][16], array[e][22]]
+      row3 = [array[e][3], array[e][9], array[e][15], array[e][21]]
+      row4 = [array[e][2], array[e][8], array[e][14], array[e][20]]
+      row5 = [array[e][1], array[e][7], array[e][13], array[e][19]]
+      row6 = [array[e][0], array[e][6], array[e][12], array[e][18]]
       
       print("Front:")
       print("| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
@@ -205,10 +206,10 @@ def print_controller(controller, array):
       print("| {:^{width}} | {:^{width}} | {:^{width}} | {:^{width}} |".format(
            *row6, width=width))
     
-    elif (e == '17'):
-      row1 = [p[2], p[5], p[8], p[11]]
-      row2 = [p[1], p[4], p[7], p[10]]
-      row3 = [p[0], p[3], p[6], p[9]]
+    elif (idx == 1):
+      row1 = [array[e][2], array[e][5], array[e][8], array[e][11]]
+      row2 = [array[e][1], array[e][4], array[e][7], array[e][10]]
+      row3 = [array[e][0], array[e][3], array[e][6], array[e][9]]
       
       print("\n")
       print("Rear:")
@@ -230,3 +231,4 @@ if __name__ == "__main__":
   for x in reversed(range(controllercount)):
     print_controller(x, data[x])
   print
+  
